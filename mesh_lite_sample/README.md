@@ -5,6 +5,10 @@
 [here](https://github.com/espressif/esp-mesh-lite)
 
 # how to listen
-1. compile/flash
-2. run in OS
+1. in `sdkconfig` file configure `CONFIG_SERVER_IP="192.168.0.1"`
+There should be IP of your PC where server will be started at port 8070.
+2. compile
+3. flash
+4. run in your PC
 `socat - TCP-LISTEN:8070,fork,reuseaddr`
+5. enjoy
