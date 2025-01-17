@@ -24,4 +24,32 @@ config SERVER_PORT
         help
             Server port.
 
+config EXAMPLE_WEB_MOUNT_POINT
+    string "Website mount point in VFS"
+    default "/www"
+    help
+        Specify the mount point in VFS.
+
+config EXAMPLE_MDNS_HOST_NAME
+    string "mDNS Host Name"
+    default "esp-home"
+    help
+        Specify the domain name used in the mDNS service.
+        Note that webpage also take it as a part of URL where it will send GET/POST requests to.
+    
+        choice EXAMPLE_WEB_DEPLOY_MODE
+            prompt "Website deploy mode"
+            default EXAMPLE_WEB_DEPLOY_SF
+            help
+                Select website deploy mode.
+                You can deploy website to host, and ESP32 will retrieve them in a semihost way (JTAG is needed).
+                You can deploy website to SD card or SPI flash, and ESP32 will retrieve them via SDIO/SPI interface.
+                Detailed operation steps are listed in the example README file.
+            config EXAMPLE_WEB_DEPLOY_SF
+                bool "Deploy website to SPI Nor Flash"
+                help
+                    Deploy website to SPI Nor Flash.
+                    Choose this production mode if the size of website is small (less than 2MB).
+        endchoice
+
 endmenu

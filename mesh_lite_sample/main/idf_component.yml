@@ -16,3 +16,5 @@ dependencies:
   wifi_provisioning:
     path: components/wifi_provisioning
     git: https://github.com/espressif/esp-mesh-lite.git
+  espressif/led_strip: "^2.4.1"
+  espressif/mdns: "^1.0.3"
