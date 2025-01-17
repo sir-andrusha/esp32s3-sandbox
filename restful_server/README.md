@@ -85,7 +85,7 @@ After the webpage design work has been finished, you should compile them by runn
 
 ```bash
 cd path_to_this_example/front/web-demo
-npm install
+npm install --no-audit
 npm run build
 ```
 > **_NOTE:_** This example needs `nodejs` version `v10.19.0`
