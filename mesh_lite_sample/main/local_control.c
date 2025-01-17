@@ -18,6 +18,12 @@
 #include "esp_bridge.h"
 #include "esp_mesh_lite.h"
 
+#include "mdns.h"
+#include <lwip/apps/netbiosns.h>
+
+#define APP_PORT_COMM       1603
+#define APP_PORT_PROXY 		5760 // use this port for all MAVLink messages (TCP)
+
 #define PAYLOAD_LEN       (1456) /**< Max payload size(in bytes) */
 
 static int g_sockfd    = -1;
@@ -207,6 +213,23 @@ void app_wifi_set_softap_info(void)
     esp_mesh_lite_set_softap_info(softap_ssid, CONFIG_BRIDGE_SOFTAP_PASSWORD);
 }
 
+void start_mdns_service() {
+    //initialize mDNS service
+    esp_err_t err = mdns_init();
+    if (err) {
+        printf("MDNS Init failed: %d\n", err);
+        return;
+    }
+    ESP_ERROR_CHECK(mdns_hostname_set("drone"));
+    ESP_ERROR_CHECK(mdns_instance_name_set("DroneBridge for ESP32"));
+
+    ESP_ERROR_CHECK(mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0));
+    // ESP_ERROR_CHECK(mdns_service_add(NULL, "_db_proxy", "_tcp", APP_PORT_PROXY, NULL, 0));
+    // ESP_ERROR_CHECK(mdns_service_add(NULL, "_db_comm", "_tcp", APP_PORT_COMM, NULL, 0));
+    ESP_ERROR_CHECK(mdns_service_instance_name_set("_http", "_tcp", "DroneBridge for ESP32"));
+    ESP_LOGI(TAG, "MDNS Service started!");
+}
+
 void app_main()
 {
     /**
@@ -238,4 +261,8 @@ void app_main()
     TimerHandle_t timer = xTimerCreate("print_system_info", 10000 / portTICK_PERIOD_MS,
                                        true, NULL, print_system_info_timercb);
     xTimerStart(timer, 0);
+
+    start_mdns_service();
+    netbiosns_init();
+    netbiosns_set_name("drone");
 }

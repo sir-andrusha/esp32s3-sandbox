@@ -3,7 +3,7 @@
 #
 # Serial flasher config
 #
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
 #
 # Partition Table
