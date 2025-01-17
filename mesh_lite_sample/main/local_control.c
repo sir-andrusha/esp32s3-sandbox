@@ -153,7 +153,7 @@ static void ip_event_sta_got_ip_handler(void *arg, esp_event_base_t event_base,
     static bool tcp_task = false;
 
     if (!tcp_task) {
-        xTaskCreate(tcp_client_write_task, "tcp_client_write_task", 4 * 1024, NULL, 5, NULL);
+        // xTaskCreate(tcp_client_write_task, "tcp_client_write_task", 4 * 1024, NULL, 5, NULL);
         tcp_task = true;
     }
 }
