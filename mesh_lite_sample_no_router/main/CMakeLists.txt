@@ -2,7 +2,7 @@ idf_component_register(SRCS "no_router.c"
                        INCLUDE_DIRS ".")
 
 if(CONFIG_MESH_ROOT)
-    set(WEB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../front/web-demo")
+    set(WEB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../front/web")
     if(EXISTS ${WEB_SRC_DIR}/site)
         spiffs_create_partition_image(www ${WEB_SRC_DIR}/site FLASH_IN_PROJECT)
     else()
