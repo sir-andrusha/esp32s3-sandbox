@@ -197,7 +197,19 @@ static esp_err_t light_brightness_post_handler(httpd_req_t* req)
 
     ESP_LOGI(TAG, "Light control: red = %d, green = %d, blue = %d", red, green, blue);
     cJSON_Delete(root);
+
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_sendstr(req, "Post control value successfully");
+    return ESP_OK;
+}
+
+static esp_err_t light_brightness_options_handler(httpd_req_t* req)
+{
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "POST");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+
+    httpd_resp_sendstr(req, "OK");
     return ESP_OK;
 }
 
@@ -327,9 +339,8 @@ static esp_err_t names_get_handler(httpd_req_t* req)
 
     uint32_t size = 0;
     const node_info_list_t* node = esp_mesh_lite_get_nodes_list(&size);
-    printf("MeshLite nodes %ld:\r\n", size);
-    for (uint32_t loop = 0; (loop < size) && (node != NULL); loop++) {
 
+    for (uint32_t loop = 0; (loop < size) && (node != NULL); loop++) {
         uint8_t lvl = node->node->level;
 
         struct in_addr ip_struct;
@@ -358,6 +369,7 @@ static esp_err_t names_get_handler(httpd_req_t* req)
     }
 
     const char* names = cJSON_Print(root);
+
     httpd_resp_sendstr(req, names);
     free((void*)names);
     cJSON_Delete(root);
@@ -405,6 +417,15 @@ void init_handlers(httpd_handle_t server, rest_server_context_t* rest_context)
     };
 
     httpd_register_uri_handler(server, &light_brightness_post_uri);
+
+    httpd_uri_t light_brightness_options_uri = {
+    .uri = "/api/v1/light/brightness",
+    .method = HTTP_OPTIONS,
+    .handler = light_brightness_options_handler,
+    .user_ctx = rest_context
+    };
+
+    httpd_register_uri_handler(server, &light_brightness_options_uri);
 
     httpd_uri_t names_get_uri = {
         .uri = "/api/v1/names",

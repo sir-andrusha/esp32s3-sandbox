@@ -6,14 +6,6 @@
     <meta charset="utf-8">
 
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- <link
-        href="/home/nick/nichd147/sir-andrusha/esp32s3-sandbox/mesh_lite_sample_no_router/front/web/css/bootstrap.min.css"
-        rel="stylesheet">
-    <script
-        src="/home/nick/nichd147/sir-andrusha/esp32s3-sandbox/mesh_lite_sample_no_router/front/web/js/bootstrap.bundle.min.js"></script>
-    <link rel=icon
-        href=/home/nick/nichd147/sir-andrusha/esp32s3-sandbox/mesh_lite_sample_no_router/front/web/favicon.ico> -->
-
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <script src="/js/bootstrap.bundle.min.js"></script>
     <link rel=icon href=/favicon.ico>
@@ -32,7 +24,7 @@
                     <th>MAC</th>
                     <th>IP</th>
                     <th>Level</th>
-                    <th>Цвет</th>
+                    <th>Color</th>
                 </tr>
             </thead>
             <tbody>
@@ -47,10 +39,10 @@
             // Функция для получения списка имен с сервера
             async function fetchNames() {
                 try {
-                    const response = await fetch('http://master-drone.local/api/v1/names');
+                    const response = await fetch(window.location.origin + '/api/v1/names');
                     const data = await response.json();
                     return data;
-                    // return [{ mac: "Алексей", ip: "1.1.1", level: 1 }, { mac: "Мария", ip: "2.2.2", level: 2 }, { mac: "Иван", ip: "2.2.2", level: 2 }];
+                    // return [{ mac: "Алексей", ip: "1.1.1.1", level: 1 }, { mac: "Мария", ip: "2.2.2.2", level: 2 }, { mac: "Иван", ip: "3.3.3.3", level: 2 }];
                 } catch (error) {
                     console.error('Ошибка при получении списка имен:', error);
                     return [];
@@ -93,6 +85,9 @@
 
                     colorInput.addEventListener('change', function (event) {
                         const selectedColor = event.target.value;
+                        const redColor = parseInt(selectedColor.substr(1,2), 16);
+                        const greenColor = parseInt(selectedColor.substr(3,2), 16);
+                        const blueColor = parseInt(selectedColor.substr(5,2), 16);
 
                         // Отправка REST-запроса на сервер
                         fetch('http://' + item.ip + '/api/v1/light/brightness', {
@@ -100,7 +95,7 @@
                             headers: {
                                 'Content-Type': 'application/json'
                             },
-                            body: JSON.stringify({ color: selectedColor })
+                            body: JSON.stringify({ red: redColor, green: greenColor, blue: blueColor })
                         })
                             .then(response => response.json())
                             .then(data => {
