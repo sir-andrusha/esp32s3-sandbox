@@ -103,46 +103,128 @@ void app_wifi_set_softap_info(void)
     esp_mesh_lite_set_softap_info(softap_ssid, CONFIG_BRIDGE_SOFTAP_PASSWORD);
 }
 
-
-#ifdef CONFIG_MESH_ROOT
-
-#include "lwip/apps/netbiosns.h"
-#include "mdns.h"
-#include "esp_spiffs.h"
-#include <string.h>
-#include <fcntl.h>
-#include "esp_http_server.h"
-#include "esp_chip_info.h"
-#include "esp_random.h"
-#include "esp_log.h"
-#include "esp_vfs.h"
-#include "cJSON.h"
-
 #include "led_strip.h"
 #define BLINK_GPIO 48
 
-esp_err_t start_rest_server(const char *base_path);
-
 static led_strip_handle_t led_strip;
 
-static const char *REST_TAG = "esp-rest";
-#define REST_CHECK(a, str, goto_tag, ...)                                              \
-    do                                                                                 \
-    {                                                                                  \
-        if (!(a))                                                                      \
-        {                                                                              \
-            ESP_LOGE(REST_TAG, "%s(%d): " str, __FUNCTION__, __LINE__, ##__VA_ARGS__); \
-            goto goto_tag;                                                             \
-        }                                                                              \
-    } while (0)
+static int red = 0;
+static int green = 0;
+static int blue = 0;
 
-#define FILE_PATH_MAX (ESP_VFS_PATH_MAX + 128)
+static void configure_led(void)
+{
+    ESP_LOGI(TAG, "Example configured to blink addressable LED!");
+    /* LED strip initialization with the GPIO and pixels number*/
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = BLINK_GPIO,
+        .max_leds = 1, // at least one LED on board
+    };
+    led_strip_rmt_config_t rmt_config = {
+        .resolution_hz = 10 * 1000 * 1000, // 10MHz
+        .flags.with_dma = false,
+    };
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+
+    /* Set all LED off to clear all pixels */
+    led_strip_clear(led_strip);
+
+    red = 254;
+    green = 254;
+    blue = 254;
+}
+
+static void light_refresh(void *arg) {
+    while (1) {
+        uint8_t level = esp_mesh_lite_get_level();
+
+        for(int i = 0; i<level; i++){
+            ESP_LOGI(TAG, "clear: i = %d", i);
+            led_strip_set_pixel(led_strip, 0, red, green, blue);
+            led_strip_refresh(led_strip);
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+            led_strip_clear(led_strip);
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+        }
+
+        led_strip_clear(led_strip);
+
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
+    vTaskDelete(NULL);
+}
+
+// common part
+
+#include "esp_http_server.h"
+#include "esp_vfs.h"
+#include "esp_spiffs.h"
+
 #define SCRATCH_BUFSIZE (10240)
 
 typedef struct rest_server_context {
     char base_path[ESP_VFS_PATH_MAX + 1];
     char scratch[SCRATCH_BUFSIZE];
 } rest_server_context_t;
+
+/* Simple handler for light brightness control */
+static esp_err_t light_brightness_post_handler(httpd_req_t *req)
+{
+    int total_len = req->content_len;
+    int cur_len = 0;
+    char *buf = ((rest_server_context_t *)(req->user_ctx))->scratch;
+    int received = 0;
+    if (total_len >= SCRATCH_BUFSIZE) {
+        /* Respond with 500 Internal Server Error */
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "content too long");
+        return ESP_FAIL;
+    }
+    while (cur_len < total_len) {
+        received = httpd_req_recv(req, buf + cur_len, total_len);
+        if (received <= 0) {
+            /* Respond with 500 Internal Server Error */
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to post control value");
+            return ESP_FAIL;
+        }
+        cur_len += received;
+    }
+    buf[total_len] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    red = cJSON_GetObjectItem(root, "red")->valueint;
+    green = cJSON_GetObjectItem(root, "green")->valueint;
+    blue = cJSON_GetObjectItem(root, "blue")->valueint;
+
+    ESP_LOGI(TAG, "Light control: red = %d, green = %d, blue = %d", red, green, blue);
+    cJSON_Delete(root);
+    httpd_resp_sendstr(req, "Post control value successfully");
+    return ESP_OK;
+}
+
+#define REST_CHECK(a, str, goto_tag, ...)                                              \
+    do                                                                                 \
+    {                                                                                  \
+        if (!(a))                                                                      \
+        {                                                                              \
+            ESP_LOGE(TAG, "%s(%d): " str, __FUNCTION__, __LINE__, ##__VA_ARGS__); \
+            goto goto_tag;                                                             \
+        }                                                                              \
+    } while (0)
+
+
+#ifdef CONFIG_MESH_ROOT
+
+#include "lwip/apps/netbiosns.h"
+#include "mdns.h"
+#include <string.h>
+#include <fcntl.h>
+#include "esp_chip_info.h"
+#include "esp_random.h"
+#include "esp_log.h"
+#include "cJSON.h"
+
+#define FILE_PATH_MAX (ESP_VFS_PATH_MAX + 128)
 
 #define CHECK_FILE_EXTENSION(filename, ext) (strcasecmp(&filename[strlen(filename) - strlen(ext)], ext) == 0)
 
@@ -180,7 +262,7 @@ static esp_err_t rest_common_get_handler(httpd_req_t *req)
     }
     int fd = open(filepath, O_RDONLY, 0);
     if (fd == -1) {
-        ESP_LOGE(REST_TAG, "Failed to open file : %s", filepath);
+        ESP_LOGE(TAG, "Failed to open file : %s", filepath);
         /* Respond with 500 Internal Server Error */
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read existing file");
         return ESP_FAIL;
@@ -194,12 +276,12 @@ static esp_err_t rest_common_get_handler(httpd_req_t *req)
         /* Read file in chunks into the scratch buffer */
         read_bytes = read(fd, chunk, SCRATCH_BUFSIZE);
         if (read_bytes == -1) {
-            ESP_LOGE(REST_TAG, "Failed to read file : %s", filepath);
+            ESP_LOGE(TAG, "Failed to read file : %s", filepath);
         } else if (read_bytes > 0) {
             /* Send the buffer contents as HTTP response chunk */
             if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK) {
                 close(fd);
-                ESP_LOGE(REST_TAG, "File sending failed!");
+                ESP_LOGE(TAG, "File sending failed!");
                 /* Abort sending file */
                 httpd_resp_sendstr_chunk(req, NULL);
                 /* Respond with 500 Internal Server Error */
@@ -210,63 +292,10 @@ static esp_err_t rest_common_get_handler(httpd_req_t *req)
     } while (read_bytes > 0);
     /* Close file after sending complete */
     close(fd);
-    ESP_LOGI(REST_TAG, "File sending complete");
+    ESP_LOGI(TAG, "File sending complete");
     /* Respond with an empty chunk to signal HTTP response completion */
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
-}
-
-/* Simple handler for light brightness control */
-static esp_err_t light_brightness_post_handler(httpd_req_t *req)
-{
-    int total_len = req->content_len;
-    int cur_len = 0;
-    char *buf = ((rest_server_context_t *)(req->user_ctx))->scratch;
-    int received = 0;
-    if (total_len >= SCRATCH_BUFSIZE) {
-        /* Respond with 500 Internal Server Error */
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "content too long");
-        return ESP_FAIL;
-    }
-    while (cur_len < total_len) {
-        received = httpd_req_recv(req, buf + cur_len, total_len);
-        if (received <= 0) {
-            /* Respond with 500 Internal Server Error */
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to post control value");
-            return ESP_FAIL;
-        }
-        cur_len += received;
-    }
-    buf[total_len] = '\0';
-
-    cJSON *root = cJSON_Parse(buf);
-    int red = cJSON_GetObjectItem(root, "red")->valueint;
-    int green = cJSON_GetObjectItem(root, "green")->valueint;
-    int blue = cJSON_GetObjectItem(root, "blue")->valueint;
-    ESP_LOGI(REST_TAG, "Light control: red = %d, green = %d, blue = %d", red, green, blue);
-    cJSON_Delete(root);
-    led_strip_set_pixel(led_strip, 0, red, green, blue);
-    led_strip_refresh(led_strip);
-    httpd_resp_sendstr(req, "Post control value successfully");
-    return ESP_OK;
-}
-
-static void configure_led(void)
-{
-    ESP_LOGI(REST_TAG, "Example configured to blink addressable LED!");
-    /* LED strip initialization with the GPIO and pixels number*/
-    led_strip_config_t strip_config = {
-        .strip_gpio_num = BLINK_GPIO,
-        .max_leds = 1, // at least one LED on board
-    };
-    led_strip_rmt_config_t rmt_config = {
-        .resolution_hz = 10 * 1000 * 1000, // 10MHz
-        .flags.with_dma = false,
-    };
-    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
-
-    /* Set all LED off to clear all pixels */
-    led_strip_clear(led_strip);
 }
 
 /* Simple handler for getting system handler */
@@ -298,22 +327,8 @@ static esp_err_t temperature_data_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-esp_err_t start_rest_server(const char *base_path)
+void init_handlers(httpd_handle_t server, rest_server_context_t *rest_context)
 {
-    configure_led();
-
-    REST_CHECK(base_path, "wrong base path", err);
-    rest_server_context_t *rest_context = calloc(1, sizeof(rest_server_context_t));
-    REST_CHECK(rest_context, "No memory for rest context", err);
-    strlcpy(rest_context->base_path, base_path, sizeof(rest_context->base_path));
-
-    httpd_handle_t server = NULL;
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.uri_match_fn = httpd_uri_match_wildcard;
-
-    ESP_LOGI(REST_TAG, "Starting HTTP Server");
-    REST_CHECK(httpd_start(&server, &config) == ESP_OK, "Start server failed", err_start);
-
     /* URI handler for fetching system info */
     httpd_uri_t system_info_get_uri = {
         .uri = "/api/v1/system/info",
@@ -331,14 +346,14 @@ esp_err_t start_rest_server(const char *base_path)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &temperature_data_get_uri);
-
-    /* URI handler for light brightness control */
-    httpd_uri_t light_brightness_post_uri = {
+    
+        httpd_uri_t light_brightness_post_uri = {
         .uri = "/api/v1/light/brightness",
         .method = HTTP_POST,
         .handler = light_brightness_post_handler,
         .user_ctx = rest_context
     };
+    
     httpd_register_uri_handler(server, &light_brightness_post_uri);
 
     /* URI handler for getting web server files */
@@ -349,12 +364,6 @@ esp_err_t start_rest_server(const char *base_path)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &common_get_uri);
-
-    return ESP_OK;
-err_start:
-    free(rest_context);
-err:
-    return ESP_FAIL;
 }
 
 
@@ -407,7 +416,6 @@ static void initialise_mdns(void)
 }
 #else
 
-#include <esp_http_server.h>
 #include <sys/param.h>
 
 /* An HTTP POST handler */
@@ -442,43 +450,57 @@ static esp_err_t echo_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-static const httpd_uri_t echo = {
-    .uri       = "/echo",
-    .method    = HTTP_POST,
-    .handler   = echo_post_handler,
-    .user_ctx  = NULL
-};
-
-static httpd_handle_t start_webserver(void)
+void init_handlers(httpd_handle_t server, rest_server_context_t *rest_context)
 {
+    httpd_uri_t echo = {
+        .uri       = "/echo",
+        .method    = HTTP_POST,
+        .handler   = echo_post_handler,
+        .user_ctx  = NULL
+    };
+
+    httpd_register_uri_handler(server, &echo);
+
+
+    httpd_uri_t light_brightness_post_uri = {
+        .uri = "/api/v1/light/brightness",
+        .method = HTTP_POST,
+        .handler = light_brightness_post_handler,
+        .user_ctx = rest_context
+    };
+
+    httpd_register_uri_handler(server, &light_brightness_post_uri);
+}
+
+#endif
+
+httpd_handle_t start_rest_server(const char *base_path)
+{
+
+    REST_CHECK(base_path, "wrong base path", err);
+
+    rest_server_context_t *rest_context = calloc(1, sizeof(rest_server_context_t));
+    REST_CHECK(rest_context, "No memory for rest context", err);
+    strlcpy(rest_context->base_path, base_path, sizeof(rest_context->base_path));
+
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-#if CONFIG_IDF_TARGET_LINUX
-    // Setting port as 8001 when building for Linux. Port 80 can be used only by a privileged user in linux.
-    // So when a unprivileged user tries to run the application, it throws bind error and the server is not started.
-    // Port 8001 can be used by an unprivileged user as well. So the application will not throw bind error and the
-    // server will be started.
-    config.server_port = 8001;
-#endif // !CONFIG_IDF_TARGET_LINUX
-    config.lru_purge_enable = true;
+    config.uri_match_fn = httpd_uri_match_wildcard;
 
-    // Start the httpd server
-    ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
-    if (httpd_start(&server, &config) == ESP_OK) {
-        // Set URI handlers
-        ESP_LOGI(TAG, "Registering URI handlers");
-        // httpd_register_uri_handler(server, &hello);
-        httpd_register_uri_handler(server, &echo);
-        // httpd_register_uri_handler(server, &ctrl);
-        // httpd_register_uri_handler(server, &any);
-        return server;
-    }
+    ESP_LOGI(TAG, "Starting HTTP Server");
+    REST_CHECK(httpd_start(&server, &config) == ESP_OK, "Start server failed", err_start);
 
+    init_handlers(server, rest_context);
+
+    return server;
+err_start:
+    free(rest_context);
+err:
     ESP_LOGI(TAG, "Error starting server!");
     return NULL;
 }
 
-static esp_err_t stop_webserver(httpd_handle_t server)
+static esp_err_t stop_rest_server(httpd_handle_t server)
 {
     // Stop the httpd server
     return httpd_stop(server);
@@ -490,7 +512,7 @@ static void disconnect_handler(void* arg, esp_event_base_t event_base,
     httpd_handle_t* server = (httpd_handle_t*) arg;
     if (*server) {
         ESP_LOGI(TAG, "Stopping webserver");
-        if (stop_webserver(*server) == ESP_OK) {
+        if (stop_rest_server(*server) == ESP_OK) {
             *server = NULL;
         } else {
             ESP_LOGE(TAG, "Failed to stop http server");
@@ -504,14 +526,14 @@ static void connect_handler(void* arg, esp_event_base_t event_base,
     httpd_handle_t* server = (httpd_handle_t*) arg;
     if (*server == NULL) {
         ESP_LOGI(TAG, "Starting webserver");
-        *server = start_webserver();
+        *server = start_rest_server(CONFIG_EXAMPLE_WEB_MOUNT_POINT);
     }
 }
 
-#endif
-
 void app_main()
 {
+    configure_led();
+
     // Set the log level for serial port printing.
     esp_log_level_set("*", ESP_LOG_INFO);
 
@@ -545,6 +567,8 @@ void app_main()
 
     esp_mesh_lite_start();
 
+    xTaskCreate(light_refresh, "light_refresh", 4 * 1024, NULL, 5, NULL);
+
     TimerHandle_t timer = xTimerCreate("print_system_info", 10000 / portTICK_PERIOD_MS,
                                        true, NULL, print_system_info_timercb);
     xTimerStart(timer, 0);
@@ -555,20 +579,17 @@ void app_main()
     netbiosns_set_name(CONFIG_EXAMPLE_MDNS_HOST_NAME);
 
     ESP_ERROR_CHECK(init_fs());
-    ESP_ERROR_CHECK(start_rest_server(CONFIG_EXAMPLE_WEB_MOUNT_POINT));
-#else
+#endif
+
     static httpd_handle_t server = NULL;
     
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &server));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &server));
 
-
     /* Start the server for the first time */
-    server = start_webserver();
+    server = start_rest_server(CONFIG_EXAMPLE_WEB_MOUNT_POINT);
 
     while (server) {
         sleep(5);
     }
-#endif    
-
 }
