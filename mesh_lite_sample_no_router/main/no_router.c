@@ -552,6 +552,15 @@ void init_handlers(httpd_handle_t server, rest_server_context_t* rest_context)
     };
 
     httpd_register_uri_handler(server, &light_brightness_post_uri);
+
+    httpd_uri_t light_brightness_options_uri = {
+        .uri = "/api/v1/light/brightness",
+        .method = HTTP_OPTIONS,
+        .handler = light_brightness_options_handler,
+        .user_ctx = rest_context
+    };
+
+    httpd_register_uri_handler(server, &light_brightness_options_uri);
 }
 
 #endif
@@ -588,7 +597,7 @@ static esp_err_t stop_rest_server(httpd_handle_t server)
     return httpd_stop(server);
 }
 
-static void disconnect_handler(void* arg, esp_event_base_t event_base,    int32_t event_id, void* event_data){
+static void disconnect_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     httpd_handle_t* server = (httpd_handle_t*)arg;
     if (*server) {
         ESP_LOGI(TAG, "Stopping webserver");
@@ -601,7 +610,7 @@ static void disconnect_handler(void* arg, esp_event_base_t event_base,    int32_
     }
 }
 
-static void connect_handler(void* arg, esp_event_base_t event_base,    int32_t event_id, void* event_data){
+static void connect_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
     ESP_LOGI(TAG, "got event IP_EVENT_STA_GOT_IP, ip:" IPSTR, IP2STR(&event->ip_info.ip));
 
